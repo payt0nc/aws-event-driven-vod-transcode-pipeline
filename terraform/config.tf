@@ -7,9 +7,9 @@ terraform {
     }
   }
   backend "s3" {
-    bucket = var.aws_tfstate_bucket
-    key    = var.aws_tfstate_key
-    region = var.aws_default_region
+    bucket = "hpchan-infrastruture"
+    key    = "solutions/aws-event-driven-vod-transcode-pipeline/dev.tfstate"
+    region = "ap-northeast-1"
   }
 }
 
