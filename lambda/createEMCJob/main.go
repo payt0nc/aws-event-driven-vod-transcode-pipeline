@@ -9,8 +9,8 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	dnmTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	emcTypes "github.com/aws/aws-sdk-go-v2/service/mediaconvert/types"
 	"github.com/sirupsen/logrus"
@@ -35,11 +35,9 @@ type SfnInfo struct {
 }
 
 type StateRecord struct {
-	EMCJobId    string `json:"emcJobID"`
-	EMCProgress string `json:"emcProgress"`
-	Input       string `json:"input"`
-	Output      string `json:"output"`
-	CreatedAt   string `json:"createdAt"`
+	EMCJobID          string `json:"emcJobId" dynamodbav:"emcJobId"`
+	StepFunctionToken string `json:"sfnToken" dynamodbav:"sfnToken"`
+	CreatedAt         string `json:"createdAt" dynamodbav:"createdAt"`
 }
 
 func HandleCreateEMCJob(ctx context.Context, event Event) error {
@@ -52,13 +50,17 @@ func HandleCreateEMCJob(ctx context.Context, event Event) error {
 	stateTableName := os.Getenv("DYNAMODB_STATE_TABLE_NAME")
 	role := os.Getenv("EMC_ROLE")
 	queue := os.Getenv("EMC_QUEUE")
+	endpoint := os.Getenv("EMC_ENDPOINT")
 
 	// Parse Event
 	input := fmt.Sprintf("s3://%s/%s", event.Task.Bucket, event.Task.Object)
 	output := fmt.Sprintf("s3://%s/%s/", "hpchan-poc-video-output", event.Task.Object)
 
+	// Mediaconvert Endpoint
+	resolver := mediaconvert.EndpointResolverFromURL(endpoint)
+
 	// Create Elemental MediaConvert Job
-	emc := mediaconvert.NewFromConfig(cfg)
+	emc := mediaconvert.NewFromConfig(cfg, mediaconvert.WithEndpointResolver(resolver))
 	jobSpec := CreateJobSpec(input, output, queue, role)
 	result, err := emc.CreateJob(ctx, jobSpec)
 	if err != nil {
@@ -67,12 +69,14 @@ func HandleCreateEMCJob(ctx context.Context, event Event) error {
 
 	// Insert DynamoDB
 	stateDB := dynamodb.NewFromConfig(cfg)
-	record := CreateDynamodbInput(stateTableName, input, output, *result.Job.Id)
+	record, err := createDynamodbInput(stateTableName, *result.Job.Id, event.SfnInfo.Token)
+	if err != nil {
+		return err
+	}
 	if _, err := stateDB.PutItem(ctx, record); err != nil {
 		return err
 	}
 	return nil
-
 }
 
 func CreateJobSpec(input string, output string, queue string, roleArn string) *mediaconvert.CreateJobInput {
@@ -82,7 +86,7 @@ func CreateJobSpec(input string, output string, queue string, roleArn string) *m
 		},
 		Queue:       &queue,
 		Role:        &roleArn,
-		JobTemplate: aws.String("HEVC File Output"),
+		JobTemplate: aws.String("simple_264_fileoutput"),
 		Settings: &emcTypes.JobSettings{
 			Inputs: []emcTypes.Input{
 				{
@@ -101,7 +105,7 @@ func CreateJobSpec(input string, output string, queue string, roleArn string) *m
 					Name: aws.String("File Group"),
 					Outputs: []emcTypes.Output{
 						{
-							Preset: aws.String("System-Generic_Hd_Mp4_Hevc_Aac_16x9_1920x1080p_50Hz_6Mbps"),
+							Preset: aws.String("System-Generic_Hd_Mp4_Avc_Aac_16x9_1920x1080p_24Hz_6Mbps"),
 						},
 					},
 					OutputGroupSettings: &emcTypes.OutputGroupSettings{
@@ -115,17 +119,18 @@ func CreateJobSpec(input string, output string, queue string, roleArn string) *m
 	}
 }
 
-func CreateDynamodbInput(tableName, input, output, jobID string) *dynamodb.PutItemInput {
-	return &dynamodb.PutItemInput{
-		TableName: &tableName,
-		Item: map[string]dnmTypes.AttributeValue{
-			"emcJobID":    dnmTypes.AttributeValueMemberS{Value: jobID},
-			"emcProgress": dnmTypes.AttributeValueMemberS{Value: "Kick Off"},
-			"input":       dnmTypes.AttributeValueMemberS{Value: input},
-			"output":      dnmTypes.AttributeValueMemberS{Value: output},
-			"createdAt":   dnmTypes.AttributeValueMemberN{Value: time.Now().Format("2006-01-02T15:04:05-0700")},
-		},
+func createDynamodbInput(tableName, jobID, sfnToken string) (*dynamodb.PutItemInput, error) {
+	record := StateRecord{
+		EMCJobID:          jobID,
+		StepFunctionToken: sfnToken,
+		CreatedAt:         time.Now().Format("2006-01-02T15:04:05-0700"),
 	}
+
+	item, err := attributevalue.MarshalMap(record)
+	if err != nil {
+		return nil, err
+	}
+	return &dynamodb.PutItemInput{TableName: &tableName, Item: item}, nil
 }
 
 func main() {
