@@ -1,13 +1,13 @@
-resource "aws_dynamodb_table" "video_job_progress" {
-  name         = var.video_job_progress_table_name
+resource "aws_dynamodb_table" "sfn_token" {
+  name         = var.dynamodb_sfn_token_table_name
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "emcJobId"
+  hash_key     = "Name"
   tags = merge(local.default_tags, {
-    "Name" : var.video_job_progress_table_name
+    "Name" : var.dynamodb_sfn_token_table_name
   })
 
   attribute {
-    name = "emcJobId"
+    name = "Name"
     type = "S"
   }
 }

@@ -40,7 +40,7 @@ resource "aws_sns_topic" "pipeline_job_status" {
 }
 
 resource "aws_sns_topic_policy" "sns_video_job_status" {
-  arn = aws_sns_topic.s3_event.arn
+  arn = aws_sns_topic.pipeline_job_status.arn
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [

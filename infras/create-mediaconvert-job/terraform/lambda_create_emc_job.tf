@@ -16,10 +16,11 @@ resource "aws_lambda_function" "create_emc_job" {
 
   environment {
     variables = {
-      DYNAMODB_STATE_TABLE_NAME = aws_dynamodb_table.video_job_progress.name
-      EMC_ROLE                  = aws_iam_role.mediaconvert_execution.arn
-      EMC_QUEUE                 = aws_media_convert_queue.vod_pipeline.id
-      EMC_ENDPOINT              = var.mediaconvert_endpoint
+      DYNAMODB_SFN_TOKEN_TABLE_NAME = aws_dynamodb_table.sfn_token.name
+      EMC_ROLE                      = aws_iam_role.mediaconvert_execution.arn
+      EMC_QUEUE                     = aws_media_convert_queue.vod_pipeline.id
+      EMC_ENDPOINT                  = var.mediaconvert_endpoint
+      EMC_OUTPUT_BUCKET             = aws_s3_bucket.video_output.bucket
     }
   }
 }
@@ -63,7 +64,7 @@ resource "aws_iam_policy" "lambda_create_emc_job_execution" {
           "dynamodb:UpdateItem",
         ],
         "Resource" : [
-          "${aws_dynamodb_table.video_job_progress.arn}"
+          "${aws_dynamodb_table.sfn_token.arn}"
         ]
       },
       {

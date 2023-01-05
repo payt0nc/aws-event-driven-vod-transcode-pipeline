@@ -8,6 +8,8 @@ github.com/aws/aws-sdk-go-v2/credentials v1.13.7 h1:qUUcNS5Z1092XBFT66IJM7mYkMwg
 github.com/aws/aws-sdk-go-v2/credentials v1.13.7/go.mod h1:AdCcbZXHQCjJh6NaH3pFaw8LUeBFn5+88BZGMVGuBT8=
 github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.10.8 h1:2DKy/A/TijgQqMDex39Im7LuVJibeztn8FN5RbgGGJ4=
 github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.10.8/go.mod h1:yqQPTPcvrrWYd3vopI+0ShM/NGRUGgZAnPeFGBSSt2Y=
+github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.4.34 h1:7wLZYO6RY0Y3hgCg9DY6Cxvc+yULizuPslCR4BJ/Fsw=
+github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.4.34/go.mod h1:l6eC7NuhvmbZO3wdbvREyUvcWVvghxSDiK9olpd/GHA=
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.21 h1:j9wi1kQ8b+e0FBVHxCqCGo4kxDU175hoDHcWAi0sauU=
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.21/go.mod h1:ugwW57Z5Z48bpvUyZuaPy4Kv+vEfJWnIrky7RmkBvJg=
 github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.27 h1:I3cakv2Uy1vNmmhRQmFptYDxOvBnwCdNwyw63N0RaRU=

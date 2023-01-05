@@ -4,138 +4,150 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
+	"path/filepath"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	emcTypes "github.com/aws/aws-sdk-go-v2/service/mediaconvert/types"
+	"github.com/payt0nc/aws-event-driven-vod-transcode-pipeline/src/databases"
 	"github.com/sirupsen/logrus"
 )
 
 var (
-	logger *logrus.Logger
+	logger            *logrus.Logger
+	sfnTokenTableName string
+	role              string
+	queue             string
+	endpoint          string
+	outputBucket      string
 )
 
 type Event struct {
-	Task    Task    `json:"task"`
-	SfnInfo SfnInfo `json:"sfnInfo"`
+	SFNName   string `json:"sfnName"`
+	SFNToken  string `json:"sfnToken"`
+	SrcBucket string `json:"srcBucket"`
+	SrcObject string `json:"srcObject"`
 }
 
-type Task struct {
-	Bucket string `json:"bucket"`
-	Object string `json:"object"`
+type UserMetadata struct {
+	ContentID    string `json:"contentID"`
+	SFNName      string `json:"sfnName"`
+	SourceBucket string `json:"sourceBucket"`
+	SourcePath   string `json:"sourcePath"`
+	DestBucket   string `json:"destBucket"`
+	DestPath     string `json:"destPath"`
 }
 
-type SfnInfo struct {
-	Token string `json:"token"`
+func fomulateUserMetadata(contentID, sfnName, srcBucket, srcPath, dstBucket string) UserMetadata {
+	return UserMetadata{
+		ContentID:    contentID,
+		SFNName:      sfnName,
+		SourceBucket: srcBucket,
+		SourcePath:   srcPath,
+		DestBucket:   dstBucket,
+		DestPath:     fmt.Sprintf("%s/", contentID),
+	}
 }
 
-type StateRecord struct {
-	EMCJobID          string `json:"emcJobId" dynamodbav:"emcJobId"`
-	StepFunctionToken string `json:"sfnToken" dynamodbav:"sfnToken"`
-	CreatedAt         string `json:"createdAt" dynamodbav:"createdAt"`
+func (m UserMetadata) GetInputS3Path() string {
+	return fmt.Sprintf("s3://%s/%s", m.SourceBucket, m.SourcePath)
 }
 
-func HandleCreateEMCJob(ctx context.Context, event Event) error {
+func (m UserMetadata) GetOutputS3Path() string {
+	return fmt.Sprintf("s3://%s/%s", m.DestBucket, m.DestPath)
+}
+
+func Handle(ctx context.Context, event Event) error {
+	l := logger.WithField("event", event)
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Env
-	stateTableName := os.Getenv("DYNAMODB_STATE_TABLE_NAME")
-	role := os.Getenv("EMC_ROLE")
-	queue := os.Getenv("EMC_QUEUE")
-	endpoint := os.Getenv("EMC_ENDPOINT")
-
-	// Parse Event
-	input := fmt.Sprintf("s3://%s/%s", event.Task.Bucket, event.Task.Object)
-	output := fmt.Sprintf("s3://%s/%s/", "hpchan-poc-video-output", event.Task.Object)
+	contentID := strings.TrimSuffix(event.SrcObject, filepath.Ext(event.SrcObject))
+	meta := fomulateUserMetadata(contentID, event.SFNName, event.SrcBucket, event.SrcObject, outputBucket)
+	l = l.WithField("userMetadata", meta)
 
 	// Mediaconvert Endpoint
 	resolver := mediaconvert.EndpointResolverFromURL(endpoint)
 
 	// Create Elemental MediaConvert Job
 	emc := mediaconvert.NewFromConfig(cfg, mediaconvert.WithEndpointResolver(resolver))
-	jobSpec := CreateJobSpec(input, output, queue, role)
-	result, err := emc.CreateJob(ctx, jobSpec)
+	jobSpec := CreateJobSpec(queue, role, meta)
+
+	resp, err := emc.CreateJob(ctx, jobSpec)
 	if err != nil {
+		l.WithError(err).Error("Create MediaConvert Job Error")
 		return err
 	}
+	l = l.WithField("mediaConvertJob", resp)
+	l.Info("Create Job Success")
 
 	// Insert DynamoDB
-	stateDB := dynamodb.NewFromConfig(cfg)
-	record, err := createDynamodbInput(stateTableName, *result.Job.Id, event.SfnInfo.Token)
-	if err != nil {
+	sfnTokenTable := databases.NewTokenTableClient(cfg, sfnTokenTableName, l)
+	if err := sfnTokenTable.InsertSFNToken(ctx, event.SFNName, event.SFNToken); err != nil {
+		l.WithError(err).Error("Insert SFN Token Error")
 		return err
 	}
-	if _, err := stateDB.PutItem(ctx, record); err != nil {
-		return err
-	}
+	l.Info("Insert SFN Token Success")
 	return nil
 }
 
-func CreateJobSpec(input string, output string, queue string, roleArn string) *mediaconvert.CreateJobInput {
+func CreateJobSpec(queue string, roleArn string, meta UserMetadata) *mediaconvert.CreateJobInput {
 	return &mediaconvert.CreateJobInput{
 		AccelerationSettings: &emcTypes.AccelerationSettings{
 			Mode: emcTypes.AccelerationModeDisabled,
 		},
 		Queue:       &queue,
 		Role:        &roleArn,
-		JobTemplate: aws.String("simple_264_fileoutput"),
+		JobTemplate: aws.String("h265_cmaf"),
 		Settings: &emcTypes.JobSettings{
 			Inputs: []emcTypes.Input{
 				{
-					AudioSelectors: map[string]emcTypes.AudioSelector{
-						"Audio Selector 1": {
-							DefaultSelection: emcTypes.AudioDefaultSelectionDefault,
-						},
-					},
-					VideoSelector:  &emcTypes.VideoSelector{},
-					TimecodeSource: emcTypes.InputTimecodeSourceZerobased,
-					FileInput:      aws.String(input),
+					FileInput: aws.String(meta.GetInputS3Path()),
 				},
 			},
 			OutputGroups: []emcTypes.OutputGroup{
 				{
-					Name: aws.String("File Group"),
-					Outputs: []emcTypes.Output{
-						{
-							Preset: aws.String("System-Generic_Hd_Mp4_Avc_Aac_16x9_1920x1080p_24Hz_6Mbps"),
-						},
-					},
 					OutputGroupSettings: &emcTypes.OutputGroupSettings{
-						FileGroupSettings: &emcTypes.FileGroupSettings{
-							Destination: aws.String(output),
+						Type: "CMAF_GROUP_SETTINGS",
+						CmafGroupSettings: &emcTypes.CmafGroupSettings{
+							SegmentLength:  10,
+							FragmentLength: 2,
+							Destination:    aws.String(meta.GetOutputS3Path()),
 						},
 					},
 				},
 			},
 		},
+		UserMetadata: map[string]string{
+			"contentID":    meta.ContentID,
+			"sfnName":      meta.SFNName,
+			"sourceBucket": meta.SourceBucket,
+			"sourcePath":   meta.SourcePath,
+			"destBucket":   meta.DestBucket,
+			"destPath":     meta.DestPath,
+		},
 	}
-}
-
-func createDynamodbInput(tableName, jobID, sfnToken string) (*dynamodb.PutItemInput, error) {
-	record := StateRecord{
-		EMCJobID:          jobID,
-		StepFunctionToken: sfnToken,
-		CreatedAt:         time.Now().Format("2006-01-02T15:04:05-0700"),
-	}
-
-	item, err := attributevalue.MarshalMap(record)
-	if err != nil {
-		return nil, err
-	}
-	return &dynamodb.PutItemInput{TableName: &tableName, Item: item}, nil
 }
 
 func main() {
+	lambda.Start(Handle)
+}
+
+func init() {
+	// Load Env
+	sfnTokenTableName = os.Getenv("DYNAMODB_SFN_TOKEN_TABLE_NAME")
+	role = os.Getenv("EMC_ROLE")
+	queue = os.Getenv("EMC_QUEUE")
+	endpoint = os.Getenv("EMC_ENDPOINT")
+	outputBucket = os.Getenv("EMC_OUTPUT_BUCKET")
+
+	// Prepare Logger
 	logger = logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	logger.SetOutput(os.Stdout)
-	lambda.Start(HandleCreateEMCJob)
 }

@@ -15,18 +15,107 @@ resource "aws_sfn_state_machine" "vod_encoding_mediaconvert_job" {
       "Comment" : "- createMediaConvertJob is an async step. It's need to be resume by external eventbridge to trigger.",
       "StartAt" : "createMediaConvertJob",
       "States" : {
+        "Parallel" : {
+          "Branches" : [
+            {
+              "StartAt" : "publishMediaConvertStatus",
+              "States" : {
+                "publishMediaConvertStatus" : {
+                  "Parameters" : {
+                    "Message.$" : "$",
+                    "TopicArn" : "${aws_sns_topic.pipeline_job_status.arn}"
+                  },
+                  "Resource" : "arn:aws:states:::sns:publish",
+                  "Type" : "Task",
+                  "End" : true
+                }
+              }
+            },
+            {
+              "StartAt" : "checkMediaConvertStatus",
+              "States" : {
+                "failureOnMediaConvert" : {
+                  "Type" : "Fail"
+                },
+                "checkMediaConvertStatus" : {
+                  "Choices" : [
+                    {
+                      "Next" : "CreateAsset",
+                      "StringEquals" : "COMPLETE",
+                      "Variable" : "$.status"
+                    }
+                  ],
+                  "Default" : "failureOnMediaConvert",
+                  "Type" : "Choice"
+                },
+                "CreateAsset" : {
+                  "Type" : "Task",
+                  "Parameters" : {
+                    "Id" : "$$.Id",
+                    "PackagingGroupId" : "$$.PackagingGroupId",
+                    "SourceArn" : "$$.SourceArn",
+                    "SourceRoleArn" : "$$.SourceRoleArn"
+                  },
+                  "Resource" : "arn:aws:states:::aws-sdk:mediapackagevod:createAsset.waitForTaskToken",
+                  "Next" : "Parallel (1)"
+                },
+                "Parallel (1)" : {
+                  "Type" : "Parallel",
+                  "End" : true,
+                  "Branches" : [
+                    {
+                      "StartAt" : "publishMediaPackageStatus",
+                      "States" : {
+                        "publishMediaPackageStatus" : {
+                          "End" : true,
+                          "Parameters" : {
+                            "Message.$" : "$",
+                            "TopicArn" : "${aws_sns_topic.pipeline_job_status.arn}"
+                          },
+                          "Resource" : "arn:aws:states:::sns:publish",
+                          "Type" : "Task"
+                        }
+                      }
+                    },
+                    {
+                      "StartAt" : "checkMediaPackageStatus",
+                      "States" : {
+                        "checkMediaPackageStatus" : {
+                          "Type" : "Choice",
+                          "Choices" : [
+                            {
+                              "Variable" : "$.status",
+                              "StringEquals" : "COMPLETE",
+                              "Next" : "Success"
+                            }
+                          ],
+                          "Default" : "failureOnMediaPackage"
+                        },
+                        "Success" : {
+                          "Type" : "Succeed"
+                        },
+                        "failureOnMediaPackage" : {
+                          "Type" : "Fail"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "End" : true,
+          "Type" : "Parallel"
+        },
         "createMediaConvertJob" : {
           "Next" : "Parallel",
           "Parameters" : {
-            "FunctionName" : "${aws_lambda_function.create_emc_job.arn}:$LATEST",
+            "FunctionName" : "arn:aws:lambda:ap-northeast-1:917447186506:function:vod-encoding-pipeline-emc-create-job:$LATEST",
             "Payload" : {
-              "sfnInfo" : {
-                "token.$" : "$$.Task.Token"
-              },
-              "task" : {
-                "bucket.$" : "$.detail.bucket.name",
-                "object.$" : "$.detail.object.key"
-              }
+              "sfnName.$" : "$$.Execution.Name",
+              "sfnToken.$" : "$$.Task.Token",
+              "srcBucket.$" : "$.detail.bucket.name",
+              "srcObject.$" : "$.detail.object.key"
             }
           },
           "Resource" : "arn:aws:states:::lambda:invoke.waitForTaskToken",
@@ -44,48 +133,6 @@ resource "aws_sfn_state_machine" "vod_encoding_mediaconvert_job" {
             }
           ],
           "Type" : "Task"
-        },
-        "Parallel" : {
-          "Type" : "Parallel",
-          "Branches" : [
-            {
-              "StartAt" : "publishMediaConvertStatus",
-              "States" : {
-                "publishMediaConvertStatus" : {
-                  "Type" : "Task",
-                  "Resource" : "arn:aws:states:::sns:publish",
-                  "Parameters" : {
-                    "Message.$" : "$",
-                    "TopicArn" : "${aws_sns_topic.pipeline_job_status.arn}"
-                  },
-                  "End" : true
-                }
-              }
-            },
-            {
-              "StartAt" : "checkMediaConvertStatus",
-              "States" : {
-                "checkMediaConvertStatus" : {
-                  "Type" : "Choice",
-                  "Choices" : [
-                    {
-                      "Variable" : "$.status",
-                      "StringEquals" : "COMPLETE",
-                      "Next" : "Success"
-                    }
-                  ],
-                  "Default" : "Fail"
-                },
-                "Success" : {
-                  "Type" : "Succeed"
-                },
-                "Fail" : {
-                  "Type" : "Fail"
-                }
-              }
-            }
-          ],
-          "End" : true
         }
       }
     }

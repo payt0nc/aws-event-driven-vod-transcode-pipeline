@@ -1,31 +1,30 @@
-data "aws_s3_object" "lambda_fucntion_resume_sfn_runtime" {
+data "aws_s3_object" "lambda_fucntion_callback_create_emc_job_runtime" {
   bucket = var.lambda_fucntion_s3_bucket
-  key    = var.lambda_fucntion_s3_resume_sfn_runtime
+  key    = var.lambda_fucntion_s3_callback_create_emc_job_runtime
 }
 
-resource "aws_lambda_function" "resume_sfn" {
+resource "aws_lambda_function" "callback_create_emc_job" {
   description      = "This lambda function is to complete Elemental MediaConvert Job"
   s3_bucket        = var.lambda_fucntion_s3_bucket
-  s3_key           = "${var.project_prefix}/resumeSFN.zip"
-  function_name    = "${var.project_prefix}-resume-sfn"
-  role             = aws_iam_role.lambda_resume_sfn.arn
-  handler          = "resumeSFN"
+  s3_key           = "${var.project_prefix}/callbackCreateEMCJob.zip"
+  function_name    = "${var.project_prefix}-callback-create-emc-job"
+  role             = aws_iam_role.lambda_callback_create_emc_job.arn
+  handler          = "callbackCreateEMCJob"
   runtime          = "go1.x"
-  source_code_hash = data.aws_s3_object.lambda_fucntion_resume_sfn_runtime.etag
+  source_code_hash = data.aws_s3_object.lambda_fucntion_callback_create_emc_job_runtime.etag
 
   environment {
     variables = {
-      DYNAMODB_STATE_TABLE_NAME = aws_dynamodb_table.video_job_progress.name
-      EMC_ROLE                  = aws_iam_role.mediaconvert_execution.arn
-      EMC_QUEUE                 = aws_media_convert_queue.vod_pipeline.id
-      EMC_ENDPOINT              = var.mediaconvert_endpoint
+      DYNAMODB_SFN_TOKEN_TABLE_NAME = aws_dynamodb_table.sfn_token.name
+      EMP_PACKING_GROUP_ID          = "simple-hls"
+      EMP_PACKING_ARN               = aws_iam_role.mediapackage_segmentor.arn
     }
   }
 }
 
 
-resource "aws_iam_role" "lambda_resume_sfn" {
-  name_prefix = "lambda_resume_sfn"
+resource "aws_iam_role" "lambda_callback_create_emc_job" {
+  name_prefix = "lambda_callback_create_emc_job"
   tags        = local.default_tags
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -41,8 +40,8 @@ resource "aws_iam_role" "lambda_resume_sfn" {
   })
 }
 
-resource "aws_iam_policy" "lambda_resume_sfn_execution" {
-  name_prefix = "lambda_resume_sfn_execution"
+resource "aws_iam_policy" "lambda_callback_create_emc_job_execution" {
+  name_prefix = "lambda_callback_create_emc_job_execution"
   tags        = local.default_tags
   policy = jsonencode({
     Version = "2012-10-17"
@@ -53,7 +52,7 @@ resource "aws_iam_policy" "lambda_resume_sfn_execution" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ],
-        "Resource" : "${aws_cloudwatch_log_group.lambda_resume_sfn.arn}:*"
+        "Resource" : "${aws_cloudwatch_log_group.lambda_callback_create_emc_job.arn}:*"
       },
       {
         "Effect" : "Allow",
@@ -63,7 +62,7 @@ resource "aws_iam_policy" "lambda_resume_sfn_execution" {
           "dynamodb:PutItem",
         ],
         "Resource" : [
-          "${aws_dynamodb_table.video_job_progress.arn}"
+          "${aws_dynamodb_table.sfn_token.arn}"
         ]
       },
       {
@@ -101,7 +100,7 @@ resource "aws_iam_policy" "lambda_resume_sfn_execution" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "attach_lambda_resume_sfn_execution" {
-  role       = aws_iam_role.lambda_resume_sfn.name
-  policy_arn = aws_iam_policy.lambda_resume_sfn_execution.arn
+resource "aws_iam_role_policy_attachment" "attach_lambda_callback_create_emc_job_execution" {
+  role       = aws_iam_role.lambda_callback_create_emc_job.name
+  policy_arn = aws_iam_policy.lambda_callback_create_emc_job_execution.arn
 }

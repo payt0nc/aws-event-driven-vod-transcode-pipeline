@@ -58,9 +58,8 @@ variable "video_s3_event_topic" {
   default = "vod-encoding-pipeline-s3-object-event"
 }
 
-variable "video_job_progress_table_name" {
-  type    = string
-  default = "vod-encoding-pipeline-job-progress"
+variable "dynamodb_sfn_token_table_name" {
+  type = string
 }
 
 
@@ -72,7 +71,7 @@ variable "lambda_fucntion_s3_create_emc_job_runtime" {
   type = string
 }
 
-variable "lambda_fucntion_s3_resume_sfn_runtime" {
+variable "lambda_fucntion_s3_callback_create_emc_job_runtime" {
   type = string
 }
 
@@ -87,5 +86,9 @@ variable "mediaconvert_endpoint" {
 
 
 variable "sns_video_job_status" {
+  type = string
+}
+
+variable "event_bus_name" {
   type = string
 }
