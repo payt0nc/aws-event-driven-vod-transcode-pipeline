@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	emcTypes "github.com/aws/aws-sdk-go-v2/service/mediaconvert/types"
 	"github.com/payt0nc/aws-event-driven-vod-transcode-pipeline/src/databases"
+	"github.com/payt0nc/aws-event-driven-vod-transcode-pipeline/src/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -53,11 +54,11 @@ func fomulateUserMetadata(contentID, sfnName, srcBucket, srcPath, dstBucket stri
 }
 
 func (m UserMetadata) GetInputS3Path() string {
-	return fmt.Sprintf("s3://%s/%s", m.SourceBucket, m.SourcePath)
+	return utils.GetS3ObjectFullPath(m.SourceBucket, m.SourcePath)
 }
 
 func (m UserMetadata) GetOutputS3Path() string {
-	return fmt.Sprintf("s3://%s/%s", m.DestBucket, m.DestPath)
+	return utils.GetS3OutputPath(m.DestBucket, m.ContentID)
 }
 
 func Handle(ctx context.Context, event Event) error {
@@ -103,7 +104,7 @@ func CreateJobSpec(queue string, roleArn string, meta UserMetadata) *mediaconver
 		},
 		Queue:       &queue,
 		Role:        &roleArn,
-		JobTemplate: aws.String("h265_cmaf"),
+		JobTemplate: aws.String("h264_1080_hls"),
 		Settings: &emcTypes.JobSettings{
 			Inputs: []emcTypes.Input{
 				{
@@ -113,11 +114,9 @@ func CreateJobSpec(queue string, roleArn string, meta UserMetadata) *mediaconver
 			OutputGroups: []emcTypes.OutputGroup{
 				{
 					OutputGroupSettings: &emcTypes.OutputGroupSettings{
-						Type: "CMAF_GROUP_SETTINGS",
-						CmafGroupSettings: &emcTypes.CmafGroupSettings{
-							SegmentLength:  10,
-							FragmentLength: 2,
-							Destination:    aws.String(meta.GetOutputS3Path()),
+						Type: emcTypes.OutputGroupTypeHlsGroupSettings,
+						HlsGroupSettings: &emcTypes.HlsGroupSettings{
+							Destination: aws.String(meta.GetOutputS3Path()),
 						},
 					},
 				},

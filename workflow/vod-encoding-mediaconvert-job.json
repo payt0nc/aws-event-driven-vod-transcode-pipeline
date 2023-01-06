@@ -1,5 +1,4 @@
 {
-  "Comment": "- createMediaConvertJob is an async step. It's need to be resume by external eventbridge to trigger.",
   "StartAt": "createMediaConvertJob",
   "States": {
     "Parallel": {
@@ -8,47 +7,31 @@
           "StartAt": "publishMediaConvertStatus",
           "States": {
             "publishMediaConvertStatus": {
+              "End": true,
               "Parameters": {
                 "Message.$": "$",
                 "TopicArn": "arn:aws:sns:ap-northeast-1:917447186506:video-pipeline-status"
               },
               "Resource": "arn:aws:states:::sns:publish",
-              "Type": "Task",
-              "End": true
+              "Type": "Task"
             }
           }
         },
         {
           "StartAt": "checkMediaConvertStatus",
           "States": {
-            "failureOnMediaConvert": {
-              "Type": "Fail"
-            },
-            "checkMediaConvertStatus": {
-              "Choices": [
-                {
-                  "Next": "CreateAsset",
-                  "StringEquals": "COMPLETE",
-                  "Variable": "$.status"
-                }
-              ],
-              "Default": "failureOnMediaConvert",
-              "Type": "Choice"
-            },
             "CreateAsset": {
-              "Type": "Task",
+              "Next": "Parallel (1)",
               "Parameters": {
-                "Id": "MyData",
-                "PackagingGroupId": "MyData",
-                "SourceArn": "MyData",
-                "SourceRoleArn": "MyData"
+                "Id.$": "$.task.id",
+                "PackagingGroupId.$": "$.task.packagingGroupId",
+                "SourceArn.$": "$.task.sourceArn",
+                "SourceRoleArn.$": "$.task.sourceRoleArn"
               },
-              "Resource": "arn:aws:states:::aws-sdk:mediapackagevod:createAsset.waitForTaskToken",
-              "Next": "Parallel (1)"
+              "Resource": "arn:aws:states:::aws-sdk:mediapackagevod:createAsset",
+              "Type": "Task"
             },
             "Parallel (1)": {
-              "Type": "Parallel",
-              "End": true,
               "Branches": [
                 {
                   "StartAt": "publishMediaPackageStatus",
@@ -65,28 +48,95 @@
                   }
                 },
                 {
-                  "StartAt": "checkMediaPackageStatus",
+                  "StartAt": "waitForCreateAsset",
                   "States": {
-                    "checkMediaPackageStatus": {
-                      "Type": "Choice",
-                      "Choices": [
-                        {
-                          "Variable": "$.result",
-                          "StringEquals": "COMPLETE",
-                          "Next": "Success"
+                    "waitForCreateAsset": {
+                      "Type": "Wait",
+                      "Seconds": 30,
+                      "Next": "DescribeAsset"
+                    },
+                    "DescribeAsset": {
+                      "Next": "Map",
+                      "Parameters": {
+                        "Id.$": "$.Id"
+                      },
+                      "Resource": "arn:aws:states:::aws-sdk:mediapackagevod:describeAsset",
+                      "Type": "Task"
+                    },
+                    "Map": {
+                      "ItemProcessor": {
+                        "ProcessorConfig": {
+                          "Mode": "INLINE"
+                        },
+                        "StartAt": "checkStreamPlayable",
+                        "States": {
+                          "Fail": {
+                            "Type": "Fail"
+                          },
+                          "Success": {
+                            "Type": "Succeed"
+                          },
+                          "checkStreamPlayable": {
+                            "Choices": [
+                              {
+                                "Variable": "$.EgressEndpoint.Status",
+                                "StringEquals": "FAILED",
+                                "Next": "Fail"
+                              },
+                              {
+                                "Variable": "$.EgressEndpoint.Status",
+                                "StringEquals": "PLAYABLE",
+                                "Next": "publishPlayableStream"
+                              }
+                            ],
+                            "Default": "Pass",
+                            "Type": "Choice"
+                          },
+                          "Pass": {
+                            "Type": "Pass",
+                            "End": true,
+                            "Result": {
+                              "Id.$": "$.Id"
+                            }
+                          },
+                          "publishPlayableStream": {
+                            "Next": "Success",
+                            "Parameters": {
+                              "Message.$": "$",
+                              "TopicArn": "arn:aws:sns:ap-northeast-1:917447186506:video-pipeline-status"
+                            },
+                            "Resource": "arn:aws:states:::sns:publish",
+                            "Type": "Task"
+                          }
                         }
-                      ],
-                      "Default": "failureOnMediaPackage"
-                    },
-                    "Success": {
-                      "Type": "Succeed"
-                    },
-                    "failureOnMediaPackage": {
-                      "Type": "Fail"
+                      },
+                      "Next": "waitForCreateAsset",
+                      "Type": "Map",
+                      "ItemSelector": {
+                        "Id.$": "$.Id",
+                        "EgressEndpoint.$": "$$.Map.Item.Value"
+                      },
+                      "ItemsPath": "$.EgressEndpoints"
                     }
                   }
                 }
-              ]
+              ],
+              "End": true,
+              "Type": "Parallel"
+            },
+            "checkMediaConvertStatus": {
+              "Choices": [
+                {
+                  "Next": "CreateAsset",
+                  "StringEquals": "COMPLETE",
+                  "Variable": "$.status"
+                }
+              ],
+              "Default": "failureOnMediaConvert",
+              "Type": "Choice"
+            },
+            "failureOnMediaConvert": {
+              "Type": "Fail"
             }
           }
         }
@@ -97,12 +147,12 @@
     "createMediaConvertJob": {
       "Next": "Parallel",
       "Parameters": {
-        "FunctionName": "arn:aws:lambda:ap-northeast-1:917447186506:function:vod-encoding-pipeline-emc-create-job:$LATEST",
+        "FunctionName": "arn:aws:lambda:ap-northeast-1:917447186506:function:vod-encoding-pipeline-create-encoding-job:$LATEST",
         "Payload": {
-          "sfnName.$": "$$.Task.Name",
+          "sfnName.$": "$$.Execution.Name",
           "sfnToken.$": "$$.Task.Token",
-          "bucket.$": "$.detail.bucket.name",
-          "object.$": "$.detail.object.key"
+          "srcBucket.$": "$.detail.bucket.name",
+          "srcObject.$": "$.detail.object.key"
         }
       },
       "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",

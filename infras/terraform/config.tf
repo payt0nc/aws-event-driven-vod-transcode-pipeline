@@ -7,9 +7,10 @@ terraform {
     }
   }
   backend "s3" {
-    bucket = "hpchan-infrastruture"
-    key    = "solutions/aws-event-driven-vod-transcode-pipeline/dev.tfstate"
-    region = "ap-northeast-1"
+    bucket         = "hpchan-infrastruture"
+    key            = "solutions/aws-event-driven-vod-transcode-pipeline/dev.tfstate"
+    region         = "ap-northeast-1"
+    dynamodb_table = "vod-pipeline-tf-lock"
   }
 }
 

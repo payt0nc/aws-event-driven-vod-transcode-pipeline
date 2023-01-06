@@ -1,17 +1,17 @@
-resource "aws_cloudwatch_log_group" "lambda_emc_create_job" {
-  name              = "/aws/lambda/${var.project_prefix}-emc-create-job"
+resource "aws_cloudwatch_log_group" "lambda_create_encoding_job" {
+  name              = "/aws/lambda/${var.project_prefix}-create-encoding-job"
   tags              = local.default_tags
   retention_in_days = 14
 }
 
-resource "aws_cloudwatch_log_group" "lambda_callback_create_emc_job" {
-  name              = "/aws/lambda/${var.project_prefix}-callback-create-emc-job"
+resource "aws_cloudwatch_log_group" "lambda_callback_create_encoding_job" {
+  name              = "/aws/lambda/${var.project_prefix}-callback-create-encoding-job"
   tags              = local.default_tags
   retention_in_days = 14
 }
 
-resource "aws_cloudwatch_log_group" "sfn_vod_encoding_mediaconvert_job" {
-  name              = "/aws/sfn/sfn-vod-encoding-mediaconvert-job"
+resource "aws_cloudwatch_log_group" "sfn_vod_pipeline_job" {
+  name              = "/aws/sfn/${var.project_prefix}/sfn-vod-pipeline-job"
   tags              = local.default_tags
   retention_in_days = 14
 }
@@ -27,4 +27,3 @@ resource "aws_cloudwatch_log_group" "mediapackage_events" {
   tags              = local.default_tags
   retention_in_days = 14
 }
-

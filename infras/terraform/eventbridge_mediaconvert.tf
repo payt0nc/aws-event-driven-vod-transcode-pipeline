@@ -1,7 +1,8 @@
 resource "aws_cloudwatch_event_rule" "emc_job_status_change" {
   name        = "${var.project_prefix}-emc-job-status-change"
-  role_arn    = aws_iam_role.eventbridge_sfn_video_pipeline.arn
+  role_arn    = aws_iam_role.eventbridge_sfn_vod_pipeline.arn
   description = "Capture MediaCovert Status Change"
+  tags        = local.default_tags
   event_pattern = jsonencode({
     "source" : ["aws.mediaconvert"],
     "detail-type" : ["MediaConvert Job State Change"],
@@ -16,9 +17,9 @@ resource "aws_cloudwatch_event_target" "mediaconvert_log_group" {
   arn  = aws_cloudwatch_log_group.mediaconvert_events.arn
 }
 
-resource "aws_cloudwatch_event_target" "video_encoding_pipeline_sfn_callback" {
+resource "aws_cloudwatch_event_target" "vod_pipeline_sfn_callback" {
   rule = aws_cloudwatch_event_rule.emc_job_status_change.name
-  arn  = aws_lambda_function.callback_create_emc_job.arn
+  arn  = aws_lambda_function.callback_create_encoding_job.arn
 
   input_transformer {
     input_paths = {
@@ -38,8 +39,8 @@ EOF
 }
 
 
-resource "aws_iam_role" "eventbridge_sfn_video_pipeline" {
-  name_prefix = "eventbridge-sfn-video-pipeline-"
+resource "aws_iam_role" "eventbridge_sfn_vod_pipeline" {
+  name_prefix = "eventbridge-sfn-vod-pipeline-"
   tags        = local.default_tags
   assume_role_policy = jsonencode({
     "Version" : "2012-10-17",
@@ -55,8 +56,8 @@ resource "aws_iam_role" "eventbridge_sfn_video_pipeline" {
   })
 }
 
-resource "aws_iam_policy" "eventbridge_sfn_video_pipeline" {
-  name_prefix = "eventbridge-sfn-video-pipeline-"
+resource "aws_iam_policy" "eventbridge_sfn_vod_pipeline" {
+  name_prefix = "eventbridge-sfn-vod-pipeline-"
   tags        = local.default_tags
   policy = jsonencode({
     "Version" : "2012-10-17",
@@ -79,7 +80,7 @@ resource "aws_iam_policy" "eventbridge_sfn_video_pipeline" {
         "Resource" : [
           "${aws_cloudwatch_log_group.mediaconvert_events.arn}:*",
           "${aws_cloudwatch_log_group.mediapackage_events.arn}:*",
-          "${aws_cloudwatch_log_group.sfn_vod_encoding_mediaconvert_job.arn}:*",
+          "${aws_cloudwatch_log_group.sfn_vod_pipeline_job.arn}:*",
         ]
       },
       {
@@ -88,14 +89,14 @@ resource "aws_iam_policy" "eventbridge_sfn_video_pipeline" {
           "lambda:InvokeFunction"
         ],
         "Resource" : [
-          "${aws_lambda_function.callback_create_emc_job.arn}:*"
+          "${aws_lambda_function.callback_create_encoding_job.arn}:*"
         ],
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "eventbridge_sfn_video_pipeline_sfn_policy" {
-  role       = aws_iam_role.eventbridge_sfn_video_pipeline.name
-  policy_arn = aws_iam_policy.eventbridge_sfn_video_pipeline.arn
+resource "aws_iam_role_policy_attachment" "eventbridge_sfn_vod_pipeline_sfn_policy" {
+  role       = aws_iam_role.eventbridge_sfn_vod_pipeline.name
+  policy_arn = aws_iam_policy.eventbridge_sfn_vod_pipeline.arn
 }

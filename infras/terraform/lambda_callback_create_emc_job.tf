@@ -1,31 +1,32 @@
-data "aws_s3_object" "lambda_fucntion_callback_create_emc_job_runtime" {
+data "aws_s3_object" "lambda_fucntion_callback_create_encoding_job_runtime" {
   bucket = var.lambda_fucntion_s3_bucket
-  key    = var.lambda_fucntion_s3_callback_create_emc_job_runtime
+  key    = var.lambda_fucntion_s3_callback_create_encoding_job_runtime
 }
 
-resource "aws_lambda_function" "callback_create_emc_job" {
+resource "aws_lambda_function" "callback_create_encoding_job" {
   description      = "This lambda function is to complete Elemental MediaConvert Job"
   s3_bucket        = var.lambda_fucntion_s3_bucket
-  s3_key           = "${var.project_prefix}/callbackCreateEMCJob.zip"
-  function_name    = "${var.project_prefix}-callback-create-emc-job"
-  role             = aws_iam_role.lambda_callback_create_emc_job.arn
-  handler          = "callbackCreateEMCJob"
+  s3_key           = var.lambda_fucntion_s3_callback_create_encoding_job_runtime
+  function_name    = "${var.project_prefix}-callback-create-encoding-job"
+  role             = aws_iam_role.lambda_callback_create_encoding_job.arn
+  handler          = "callbackEncodingJob"
   runtime          = "go1.x"
-  source_code_hash = data.aws_s3_object.lambda_fucntion_callback_create_emc_job_runtime.etag
+  source_code_hash = data.aws_s3_object.lambda_fucntion_callback_create_encoding_job_runtime.etag
+  tags             = local.default_tags
 
   environment {
     variables = {
       DYNAMODB_SFN_TOKEN_TABLE_NAME = aws_dynamodb_table.sfn_token.name
-      EMP_PACKING_GROUP_ID          = "simple-hls"
+      EMP_PACKING_GROUP_ID          = var.mediapackage_packing_group_id
       EMP_PACKING_ARN               = aws_iam_role.mediapackage_segmentor.arn
     }
   }
 }
 
 
-resource "aws_iam_role" "lambda_callback_create_emc_job" {
-  name_prefix = "lambda_callback_create_emc_job"
-  tags        = local.default_tags
+resource "aws_iam_role" "lambda_callback_create_encoding_job" {
+  name = "lambda-callback-create-encoding-job"
+  tags = local.default_tags
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -40,8 +41,8 @@ resource "aws_iam_role" "lambda_callback_create_emc_job" {
   })
 }
 
-resource "aws_iam_policy" "lambda_callback_create_emc_job_execution" {
-  name_prefix = "lambda_callback_create_emc_job_execution"
+resource "aws_iam_policy" "lambda_callback_create_encoding_job_execution" {
+  name_prefix = "lambda-callback-create-encoding-job"
   tags        = local.default_tags
   policy = jsonencode({
     Version = "2012-10-17"
@@ -52,7 +53,7 @@ resource "aws_iam_policy" "lambda_callback_create_emc_job_execution" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ],
-        "Resource" : "${aws_cloudwatch_log_group.lambda_callback_create_emc_job.arn}:*"
+        "Resource" : "${aws_cloudwatch_log_group.lambda_callback_create_encoding_job.arn}:*"
       },
       {
         "Effect" : "Allow",
@@ -100,7 +101,7 @@ resource "aws_iam_policy" "lambda_callback_create_emc_job_execution" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "attach_lambda_callback_create_emc_job_execution" {
-  role       = aws_iam_role.lambda_callback_create_emc_job.name
-  policy_arn = aws_iam_policy.lambda_callback_create_emc_job_execution.arn
+resource "aws_iam_role_policy_attachment" "attach_lambda_callback_create_encoding_job_execution" {
+  role       = aws_iam_role.lambda_callback_create_encoding_job.name
+  policy_arn = aws_iam_policy.lambda_callback_create_encoding_job_execution.arn
 }

@@ -27,7 +27,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -35,6 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/payt0nc/aws-event-driven-vod-transcode-pipeline/src/databases"
+	"github.com/payt0nc/aws-event-driven-vod-transcode-pipeline/src/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -66,14 +66,10 @@ type Output struct {
 }
 
 type MediaPackageInput struct {
-	ID               string `json:"Id"`
-	PackagingGroupID string `json:"PackagingGroupId"`
-	SourceARN        string `json:"SourceArn"`
-	SourceRoleARN    string `json:"SourceRoleArn"`
-}
-
-func fomulateS3ObjectARN(bucket, key string) string {
-	return fmt.Sprintf("arn:aws:s3:::%s/%s", bucket, key)
+	ID               string `json:"id"`
+	PackagingGroupID string `json:"packagingGroupId"`
+	SourceARN        string `json:"sourceArn"`
+	SourceRoleARN    string `json:"sourceRoleArn"`
 }
 
 func Handle(ctx context.Context, event Event) error {
@@ -113,7 +109,7 @@ func Handle(ctx context.Context, event Event) error {
 		MediaPackageInput{
 			ID:               event.UserMetadata.ContentID,
 			PackagingGroupID: mediaPackagingGroupID,
-			SourceARN:        fomulateS3ObjectARN(event.UserMetadata.DestBucket, event.UserMetadata.DestPath),
+			SourceARN:        utils.GetS3OutputM3U8Arn(event.UserMetadata.DestBucket, event.UserMetadata.ContentID),
 			SourceRoleARN:    mediaPackagingARN,
 		},
 	})
